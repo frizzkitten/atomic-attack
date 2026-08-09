@@ -43,7 +43,7 @@ await step('01-title', async () => wait(600));
 
 // ---- character creation ----
 await step('02-create', async () => {
-  await page.click('button:has-text("START")');
+  await page.click('button:has-text("THE BOMB")');
   await wait(400);
 });
 

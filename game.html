@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>THE BOMB ADVENTURE</title>
+<title>THE BIG ADVENTURE</title>
 <style>
   * { box-sizing: border-box; }
   html, body {
@@ -138,11 +138,18 @@ const S = {
   name: 'HERO',
   gender: 'boy',      // 'boy' | 'girl'
   weapon: 'axe',      // 'axe' | 'spear'
+  level: 1,           // 1 = the bomb, 2 = the NASA spacecraft
   hp: 100, maxHp: 100,
   kills: 0,
   supplies: 0,
   bombsDefused: 0,
   loot: 0,
+  // level 2
+  beamsDodged: 0,
+  partsFound: 0,
+  shipHits: 0,
+  shotsFired: 0,
+  ragePct: 0,
   shake: 0,
   flash: 0
 };
@@ -154,7 +161,11 @@ const COLORS = {
 
 /* -------------------------------- input -------------------------------- */
 const keys = {};
+/* A fast tap can start and end between two animation frames, so the jump would
+   silently never happen. Buffer it for a moment instead. */
+let jumpBuffer = 0;
 addEventListener('keydown', e => {
+  if (!e.repeat && (e.code === 'ArrowUp' || e.code === 'KeyW')) jumpBuffer = 0.16;
   keys[e.code] = true;
   if (['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) e.preventDefault();
 });
@@ -464,6 +475,175 @@ function drawMario(m) {
   ctx.restore();
 }
 
+/* ------------------------- LEVEL 2 ART ------------------------- */
+
+/* the NASA spacecraft — a chunky shuttle-ish thing that reads at any size */
+function drawSpacecraft(x, y, s, t, opt = {}) {
+  const fx = opt.face === -1 ? -1 : 1;      // nose points the way it's flying
+  ctx.save();
+  ctx.translate(x, y); ctx.scale(s, s);
+  ctx.scale(fx, 1);
+  if (opt.tilt) ctx.rotate(opt.tilt);
+  if (opt.hurtT > 0) ctx.globalAlpha = 0.55;
+
+  // engine flames
+  const flick = 0.7 + Math.abs(Math.sin(t * 22)) * 0.5;
+  ctx.fillStyle = '#ff8a1f';
+  ctx.beginPath(); ctx.moveTo(-74, -8); ctx.lineTo(-74 - 42 * flick, 0); ctx.lineTo(-74, 8); ctx.fill();
+  ctx.fillStyle = '#ffe14a';
+  ctx.beginPath(); ctx.moveTo(-74, -4); ctx.lineTo(-74 - 24 * flick, 0); ctx.lineTo(-74, 4); ctx.fill();
+
+  // wings
+  ctx.fillStyle = '#c8d2dd';
+  ctx.beginPath(); ctx.moveTo(-20, 6); ctx.lineTo(-64, 42); ctx.lineTo(14, 20); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(-20, -6); ctx.lineTo(-64, -42); ctx.lineTo(14, -20); ctx.closePath(); ctx.fill();
+  // tail fin
+  ctx.fillStyle = '#aab6c4';
+  ctx.beginPath(); ctx.moveTo(-58, -6); ctx.lineTo(-84, -40); ctx.lineTo(-46, -8); ctx.closePath(); ctx.fill();
+
+  // fuselage
+  ctx.fillStyle = '#f2f5f8';
+  ctx.beginPath();
+  ctx.moveTo(76, 0);
+  ctx.quadraticCurveTo(60, -24, 10, -26);
+  ctx.lineTo(-72, -20); ctx.quadraticCurveTo(-82, 0, -72, 20);
+  ctx.lineTo(10, 26); ctx.quadraticCurveTo(60, 24, 76, 0);
+  ctx.fill();
+
+  // stripes + markings
+  ctx.fillStyle = '#2b5fd0'; ctx.fillRect(-40, -6, 74, 8);
+  ctx.fillStyle = '#e33b2e'; ctx.fillRect(-40, 2, 74, 5);
+  ctx.save(); ctx.scale(fx, 1);             // un-mirror so NASA stays readable
+  ctx.fillStyle = '#1b2b40'; ctx.font = 'bold 15px "Trebuchet MS"';
+  ctx.fillText('NASA', -34, -10);
+  ctx.restore();
+
+  // cockpit
+  ctx.fillStyle = '#1b2b40';
+  ctx.beginPath(); ctx.ellipse(50, -6, 17, 10, -0.15, 0, 7); ctx.fill();
+  ctx.fillStyle = '#6fd2ff';
+  ctx.beginPath(); ctx.ellipse(52, -8, 12, 6, -0.15, 0, 7); ctx.fill();
+
+  // blinking beacon
+  circle(-30, -22, 5, Math.sin(t * 9) > 0 ? '#ff4d3d' : '#5a1a14');
+  ctx.restore();
+
+  if (opt.hp != null && opt.hp < opt.maxHp) {
+    const bw = 110 * s;
+    ctx.fillStyle = '#000a'; ctx.fillRect(x - bw / 2, y - 46 * s, bw, 9);
+    ctx.fillStyle = '#4ede77';
+    ctx.fillRect(x - bw / 2 + 1, y - 45 * s, (bw - 2) * (opt.hp / opt.maxHp), 7);
+  }
+}
+
+/* your house — before and after the spacecraft lands on it */
+function drawHouse(x, y, wrecked, t) {
+  ctx.save(); ctx.translate(x, y);
+  if (!wrecked) {
+    rr(-80, -110, 160, 110, 6, '#d9b382');            // walls
+    ctx.fillStyle = '#b5442f';                        // roof
+    ctx.beginPath(); ctx.moveTo(-96, -108); ctx.lineTo(0, -168); ctx.lineTo(96, -108); ctx.closePath(); ctx.fill();
+    rr(52, -160, 22, 46, 3, '#8a5a3a');               // chimney
+    rr(-22, -66, 46, 66, 4, '#7a4b2c');               // door
+    circle(14, -32, 4, '#ffd54a');
+    rr(-66, -92, 34, 30, 3, '#8fd0f0');               // windows
+    rr(34, -92, 34, 30, 3, '#8fd0f0');
+    ctx.strokeStyle = '#d9b382'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(-49, -92); ctx.lineTo(-49, -62); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(51, -92); ctx.lineTo(51, -62); ctx.stroke();
+  } else {
+    // rubble pile
+    ctx.fillStyle = '#8a7256';
+    ctx.beginPath(); ctx.moveTo(-92, 0); ctx.lineTo(-58, -54); ctx.lineTo(-16, -14);
+    ctx.lineTo(24, -62); ctx.lineTo(66, -10); ctx.lineTo(94, 0); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#6d5943';
+    for (let i = 0; i < 9; i++) {
+      const bx = -80 + i * 19, by = -6 - ((i * 13) % 30);
+      ctx.save(); ctx.translate(bx, by); ctx.rotate(i * 0.7); ctx.fillRect(-11, -7, 22, 14); ctx.restore();
+    }
+    ctx.fillStyle = '#b5442f';                        // broken roof beam
+    ctx.save(); ctx.translate(-24, -46); ctx.rotate(-0.5); ctx.fillRect(-46, -6, 92, 12); ctx.restore();
+    // smoke
+    for (let i = 0; i < 5; i++) {
+      const px = -40 + i * 22, py = -60 - ((t * 26 + i * 34) % 110);
+      ctx.globalAlpha = Math.max(0, 0.4 - (-py - 60) / 260);
+      circle(px + Math.sin(t + i) * 10, py, 15 + i * 2, '#8d8d95');
+    }
+    ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+}
+
+function drawSchool(x, y) {
+  ctx.save(); ctx.translate(x, y);
+  rr(-150, -170, 300, 170, 6, '#c4645a');
+  ctx.fillStyle = '#9c4a42'; ctx.fillRect(-160, -184, 320, 18);
+  rr(-34, -92, 68, 92, 4, '#5a3f2e');                 // doors
+  ctx.strokeStyle = '#c4645a'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(0, -92); ctx.lineTo(0, 0); ctx.stroke();
+  for (let i = 0; i < 4; i++) {                       // windows
+    rr(-132 + i * 76 + (i > 1 ? 40 : 0), -150, 46, 40, 3, '#8fd0f0');
+  }
+  rr(-14, -240, 28, 60, 4, '#9c4a42');                // bell tower
+  circle(0, -246, 20, '#f2e6c8');
+  ctx.strokeStyle = '#3a2a1a'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(0, -246); ctx.lineTo(0, -258); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0, -246); ctx.lineTo(10, -242); ctx.stroke();
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 20px "Trebuchet MS"'; ctx.textAlign = 'center';
+  ctx.fillText('SCHOOL', 0, -104); ctx.textAlign = 'left';
+  ctx.restore();
+}
+
+function drawTeacher(x, y, face, opt = {}) {
+  ctx.save(); ctx.translate(x, y); ctx.scale(face || 1, 1);
+  ctx.globalAlpha = 0.35; ctx.fillStyle = '#000';
+  ctx.beginPath(); ctx.ellipse(0, 2, 24, 6, 0, 0, 7); ctx.fill(); ctx.globalAlpha = 1;
+  rr(-20, -44, 40, 46, 6, '#6b4a8a');                 // long skirt
+  rr(-17, -78, 34, 38, 8, '#8a63ab');                 // blouse
+  rr(-24, -74, 9, 26, 4, '#e8b98c');
+  rr(15, -74, 9, 26, 4, '#e8b98c');
+  circle(0, -96, 17, '#e8b98c');
+  ctx.fillStyle = '#5a4432';                          // bun hairdo
+  ctx.beginPath(); ctx.arc(0, -99, 17, Math.PI, 0); ctx.fill();
+  circle(0, -114, 9, '#5a4432');
+  circle(-6, -96, 2.5, '#241a12'); circle(6, -96, 2.5, '#241a12');
+  ctx.strokeStyle = '#241a12'; ctx.lineWidth = 2;     // glasses
+  ctx.beginPath(); ctx.arc(-6, -96, 7, 0, 7); ctx.stroke();
+  ctx.beginPath(); ctx.arc(7, -96, 7, 0, 7); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(1, -96); ctx.lineTo(0, -96); ctx.stroke();
+  ctx.beginPath();
+  if (opt.shocked) { ctx.arc(0, -86, 5, 0, 7); ctx.fillStyle = '#241a12'; ctx.fill(); }
+  else { ctx.arc(0, -89, 5, 0.2, Math.PI - 0.2); ctx.stroke(); }
+  if (opt.pointer) { ctx.fillStyle = '#c8a45c'; ctx.fillRect(20, -104, 5, 44); }
+  ctx.restore();
+}
+
+function drawChalkboard(x, y, lines) {
+  ctx.save(); ctx.translate(x, y);
+  rr(-190, -120, 380, 200, 8, '#6b4a2e');
+  rr(-178, -108, 356, 176, 4, '#2c4a38');
+  ctx.fillStyle = '#eaf3ea'; ctx.font = 'bold 22px "Trebuchet MS"'; ctx.textAlign = 'center';
+  lines.forEach((l, i) => ctx.fillText(l, 0, -66 + i * 34));
+  ctx.textAlign = 'left';
+  ctx.restore();
+}
+
+/* slingshot: pull 0..1, angle in radians */
+function drawSlingshot(x, y, pull, angle, hasAmmo) {
+  ctx.save(); ctx.translate(x, y);
+  ctx.strokeStyle = '#8a5a2b'; ctx.lineWidth = 9; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(0, 34); ctx.lineTo(0, -6); ctx.stroke();   // handle
+  ctx.beginPath(); ctx.moveTo(0, -6); ctx.lineTo(-17, -34); ctx.stroke(); // Y fork
+  ctx.beginPath(); ctx.moveTo(0, -6); ctx.lineTo(17, -34); ctx.stroke();
+  // rubber band, stretched back along the aim line
+  const px = -Math.cos(angle) * pull * 34, py = Math.sin(angle) * pull * 34;
+  ctx.strokeStyle = '#d4634f'; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.moveTo(-17, -34); ctx.lineTo(px, py - 18); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(17, -34); ctx.lineTo(px, py - 18); ctx.stroke();
+  if (hasAmmo) circle(px, py - 18, 8, '#6e6357');
+  ctx.restore();
+}
+
 /* -- scenery -- */
 function drawSky(top, bottom) {
   const g = ctx.createLinearGradient(0, 0, 0, H);
@@ -597,6 +777,16 @@ function loop(now) {
 }
 requestAnimationFrame(loop);
 
+/* A panel pinned to the bottom of the screen (dialogue box, choice buttons)
+   would otherwise sit right on top of the characters, so shift the scene up. */
+function drawLifted(fn) {
+  ctx.fillStyle = '#07070f'; ctx.fillRect(0, 0, W, H);
+  ctx.save();
+  ctx.translate(0, -DLG_LIFT);
+  fn();
+  ctx.restore();
+}
+
 /* ---- generic dialogue scene ---- */
 function dialogue(lines, bgFn, nextFn) {
   let i = 0;
@@ -636,15 +826,7 @@ function dialogue(lines, bgFn, nextFn) {
       addEventListener('keydown', onKey);
     },
     cleanup() { removeEventListener('keydown', onKey); },
-    draw() {
-      // The dialogue box owns the bottom ~140px, so lift the whole scene up
-      // that far — otherwise every character is talking from behind the box.
-      ctx.fillStyle = '#07070f'; ctx.fillRect(0, 0, W, H);
-      ctx.save();
-      ctx.translate(0, -DLG_LIFT);
-      bgFn();
-      ctx.restore();
-    },
+    draw() { drawLifted(bgFn); },
     update(dt) { if (this.t == null) this.t = 0; this.t += dt; }
   });
 }
@@ -658,11 +840,24 @@ function sceneTitle() {
   setScene({
     enter() {
       const p = el('div', 'panel');
-      p.style.top = '18%'; p.style.width = '78%';
-      p.appendChild(el('div', 'title-big', 'THE BOMB ADVENTURE'));
-      p.appendChild(el('div', 'sub', 'animals · a bomb · a portal · and Mario'));
-      const row = el('div'); row.style.marginTop = '14px';
-      row.appendChild(button('▶ START', 'big green', () => { fanfare(); sceneCreate(); }));
+      p.style.top = '10%'; p.style.width = '84%';
+      p.appendChild(el('div', 'title-big', 'THE BIG ADVENTURE'));
+      p.appendChild(el('div', 'sub', 'pick your level!'));
+
+      const row = el('div');
+      row.style.cssText = 'display:flex;gap:16px;justify-content:center;margin-top:12px';
+
+      const lvl = (n, name, blurb, cls) => {
+        const b = el('button', 'btn ' + cls,
+          `<div style="font-size:15px;opacity:.85">LEVEL ${n}</div>` +
+          `<div style="font-size:23px">${name}</div>` +
+          `<div style="font-size:13px;opacity:.85;font-weight:normal">${blurb}</div>`);
+        b.style.width = '300px';
+        b.onclick = () => { beep(660); fanfare(); S.level = n; sceneCreate(); };
+        return b;
+      };
+      row.appendChild(lvl(1, 'THE BOMB', 'animals · a bomb · a portal · Mario', 'green'));
+      row.appendChild(lvl(2, 'THE SPACECRAFT', 'NASA · a slingshot · school · rage', 'red'));
       p.appendChild(row);
       p.appendChild(el('div', 'sub', '<span style="font-size:15px">move: ← →  ·  jump: ↑  ·  attack: SPACE</span>'));
       ui.appendChild(p);
@@ -673,6 +868,8 @@ function sceneTitle() {
       circle(740, 130, 60, '#ffd06b');
       drawMountains('#3b2244', '#54305c');
       drawGround('#3a2b1c', '#4a3626');
+      // low and left, clear of the level-select panel
+      drawSpacecraft(140 + Math.sin(t * 0.6) * 34, 396 + Math.sin(t * 1.3) * 8, 0.58, t);
       drawHero(250, GROUND + 40, { face: 1, bob: t * 3, swing: (Math.sin(t * 3) + 1) / 2 * 0.35 });
       drawBart(660, GROUND + 40, true);
       drawMario({ x: 520, y: GROUND + 40, face: -1, hurtT: 0 });
@@ -763,7 +960,7 @@ function sceneCreate() {
       const go = button('LET\'S GO! ▶', 'big green', () => {
         S.name = (inp.value.trim() || 'HERO').toUpperCase();
         fanfare();
-        sceneAnimalsIntro();
+        if (S.level === 2) sceneL2Intro(); else sceneAnimalsIntro();
       });
       go.style.marginTop = '8px';
       p.appendChild(go);
@@ -836,7 +1033,11 @@ function fighterPhysics(p, dt) {
   p.vx = 0;
   if (keys.ArrowLeft || keys.KeyA)  { p.vx = -spd; p.face = -1; }
   if (keys.ArrowRight || keys.KeyD) { p.vx =  spd; p.face =  1; }
-  if ((keys.ArrowUp || keys.KeyW) && p.onGround) { p.vy = -560; p.onGround = false; beep(700, 0.07, 'triangle', 0.08); }
+  if (jumpBuffer > 0) jumpBuffer -= dt;
+  if ((keys.ArrowUp || keys.KeyW || jumpBuffer > 0) && p.onGround) {
+    p.vy = -560; p.onGround = false; jumpBuffer = 0;
+    beep(700, 0.07, 'triangle', 0.08);
+  }
 
   p.x += p.vx * dt;
   p.vy += 1500 * dt;
@@ -848,6 +1049,13 @@ function fighterPhysics(p, dt) {
   if (p.cool > 0) p.cool -= dt;
   if (p.invuln > 0) p.invuln -= dt;
   if (p.swing > 0) p.swing = Math.max(0, p.swing - dt * 4);
+}
+
+/* Pickup test measured from the player's chest, so an item is grabbed whether
+   you walk into it or jump through it — never "I touched it and nothing happened". */
+function touching(it, p, r = 95) {
+  const dx = it.x - p.x, dy = it.y - (p.y - 50);
+  return dx * dx + dy * dy < r * r;
 }
 
 function tryAttack(p) {
@@ -1077,7 +1285,7 @@ function sceneShelter() {
       for (const it of items) {
         it.t += dt;
         if (it.got) continue;
-        if (Math.abs(it.x - p.x) < 42 && Math.abs(it.y - (p.y - 45)) < 62) {
+        if (touching(it, p)) {
           it.got = true; collected++; S.supplies++;
           beep(700 + collected * 90, 0.13, 'square', 0.12);
           burst(it.x, it.y, '#ffd54a', 14);
@@ -1754,6 +1962,629 @@ function sceneMario() {
 }
 
 /* ======================================================================== */
+/*                  LEVEL 2 — THE NASA SPACECRAFT                            */
+/* ======================================================================== */
+
+function drawNeighborhood(t, wrecked, shipOpt) {
+  drawSky('#4a8fd4', '#bfe4f7');
+  ctx.fillStyle = '#fff';
+  for (let i = 0; i < 4; i++) {
+    const x = (i * 250 + t * 8) % (W + 200) - 100, y = 54 + (i % 2) * 42;
+    circle(x, y, 24, '#fff'); circle(x + 24, y + 6, 18, '#fff'); circle(x - 24, y + 6, 18, '#fff');
+  }
+  // neighbours' houses in the background
+  [[130, '#9fb6d4'], [760, '#c9b0d4']].forEach(([hx, c]) => {
+    rr(hx - 54, GROUND - 96, 108, 96, 4, c);
+    ctx.fillStyle = '#6b7a92';
+    ctx.beginPath(); ctx.moveTo(hx - 64, GROUND - 94); ctx.lineTo(hx, GROUND - 138); ctx.lineTo(hx + 64, GROUND - 94); ctx.fill();
+    rr(hx - 12, GROUND - 46, 24, 46, 3, '#5a4432');
+  });
+  drawGround('#4a8a3e', '#57a049');
+  // street
+  ctx.fillStyle = '#5a5a62'; ctx.fillRect(0, GROUND + 52, W, 40);
+  ctx.fillStyle = '#e8e2c8';
+  for (let x = 10; x < W; x += 70) ctx.fillRect(x, GROUND + 70, 36, 5);
+  drawHouse(450, GROUND, wrecked, t);
+  if (shipOpt) drawSpacecraft(shipOpt.x, shipOpt.y, shipOpt.s || 0.72, t, shipOpt);
+}
+
+/* ---------------- L2.1  "hey, what should we do today?" ---------------- */
+
+function sceneL2Intro() {
+  S.beamsDodged = 0; S.partsFound = 0; S.shipHits = 0; S.shotsFired = 0;
+  S.hp = S.maxHp;
+  dialogue([
+    { who: 'YOUR PARTNER', text: 'Hey! What should we do today?', color: '#4fc98a' },
+    { who: S.name, text: 'I dunno. Something awesome.', color: '#4fc3f7' },
+    { who: 'YOUR PARTNER', text: 'I SEE A NASA SPACECRAFT!!', color: '#4fc98a' },
+    { who: 'YOUR PARTNER', text: 'AHHH, RUN!!!', color: '#ff5a4a' },
+    { who: 'HOW TO RUN', text: '← → to run.  ↑ to jump.  Do NOT stand in the red circles!', color: '#ffd54a' }
+  ], () => {
+    drawNeighborhood(2, false, { x: 620, y: 250 });
+    drawHero(210, GROUND + 40, { face: 1 });
+    drawFriend(330, GROUND + 40, { face: -1 });
+  }, sceneRunAway);
+}
+
+/* ---------------- L2.2  dodge the spacecraft's beams ---------------- */
+
+function sceneRunAway() {
+  const p = makeFighter();
+  p.x = 300;
+  const NEED = 6;
+  let beams = [], fired = 0, spawnT = 1.0, t = 0, done = false;
+  const ship = { x: 640, y: 120, dir: -1 };
+
+  setScene({
+    pInvulnRef: p,
+    update(dt) {
+      if (done) return;
+      t += dt;
+      fighterPhysics(p, dt);
+
+      ship.x += ship.dir * 90 * dt;
+      if (ship.x < 180) ship.dir = 1;
+      if (ship.x > 760) ship.dir = -1;
+      ship.y = 120 + Math.sin(t * 1.4) * 12;
+
+      spawnT -= dt;
+      if (spawnT <= 0 && fired < NEED) {
+        fired++;
+        spawnT = 1.7;
+        beams.push({ x: p.x + p.vx * 0.35, warn: 0.95, live: 0, spent: false });
+        beep(300, 0.12, 'sine', 0.08);
+      }
+
+      for (const b of beams) {
+        if (b.warn > 0) {
+          b.warn -= dt;
+          if (b.warn <= 0) { b.live = 0.45; beep(900, 0.2, 'sawtooth', 0.1); S.shake = 10; }
+        } else if (b.live > 0) {
+          b.live -= dt;
+          if (!b.spent && Math.abs(p.x - b.x) < 42 && p.onGround) {
+            b.spent = true; hurtPlayer(8);
+          }
+          if (b.live <= 0 && !b.spent) { b.spent = true; S.beamsDodged++; floatText(b.x, GROUND - 60, 'DODGED!', '#4ede77'); }
+        }
+      }
+      beams = beams.filter(b => b.warn > 0 || b.live > 0);
+
+      if (S.hp <= 0) { done = true; setTimeout(() => gameOver(sceneRunAway), 400); }
+      else if (fired >= NEED && beams.length === 0) {
+        done = true; fanfare();
+        setTimeout(sceneFirstTry, 900);
+      }
+    },
+    draw() {
+      drawNeighborhood(t, false, { x: ship.x, y: ship.y, face: ship.dir });
+      for (const b of beams) {
+        if (b.warn > 0) {
+          const pulse = 0.4 + Math.abs(Math.sin(t * 14)) * 0.5;
+          ctx.globalAlpha = pulse;
+          ctx.fillStyle = '#ff4d3d';
+          ctx.beginPath(); ctx.ellipse(b.x, GROUND + 40, 42, 13, 0, 0, 7); ctx.fill();
+          ctx.globalAlpha = 1;
+        } else if (b.live > 0) {
+          const g = ctx.createLinearGradient(0, 0, 0, GROUND + 40);
+          g.addColorStop(0, 'rgba(120,230,255,.15)');
+          g.addColorStop(1, 'rgba(150,240,255,.85)');
+          ctx.fillStyle = g;
+          ctx.beginPath();
+          ctx.moveTo(b.x - 16, 150); ctx.lineTo(b.x + 16, 150);
+          ctx.lineTo(b.x + 40, GROUND + 40); ctx.lineTo(b.x - 40, GROUND + 40);
+          ctx.closePath(); ctx.fill();
+          if (Math.random() < 0.6) burst(b.x + (Math.random() - 0.5) * 60, GROUND + 30, '#9beeff', 2, 130);
+        }
+      }
+      drawHero(p.x, p.y, { face: p.face, hurt: p.invuln > 0, bob: p.vx !== 0 ? p.t * 12 : 0 });
+      drawHUD('BEAMS LEFT: ' + Math.max(0, NEED - fired));
+      if (t < 3.2) {
+        ctx.fillStyle = '#fff'; ctx.font = 'bold 28px Trebuchet MS'; ctx.textAlign = 'center';
+        ctx.strokeStyle = '#000'; ctx.lineWidth = 5;
+        ctx.strokeText('RUN!!!', W / 2, 130); ctx.fillText('RUN!!!', W / 2, 130);
+        ctx.textAlign = 'left';
+      }
+    }
+  });
+}
+
+/* ---------------- L2.3  the first, terrible slingshot ---------------- */
+
+function sceneFirstTry() {
+  dialogue([
+    { who: S.name, text: 'Hmm... I should attack that.', color: '#4fc3f7' },
+    { who: 'YOUR PARTNER', text: 'With WHAT?', color: '#4fc98a' },
+    { who: S.name, text: 'A slingshot. I will make one right now.', color: '#4fc3f7' }
+  ], () => {
+    drawNeighborhood(3, false, { x: 620, y: 250 });
+    drawHero(210, GROUND + 40, { face: 1 });
+    drawFriend(330, GROUND + 40, { face: -1 });
+  }, sceneFirstShot);
+}
+
+/* One scripted shot that flops — this is the "but you have to learn" beat. */
+function sceneFirstShot() {
+  let t = 0, phase = 0;
+  const proj = { x: 0, y: 0, vx: 0, vy: 0, live: false };
+
+  setScene({
+    enter() {
+      const tip = el('div', 'toast', 'Try your homemade slingshot!');
+      ui.appendChild(tip);
+      const b = button('FIRE! 🎯', 'big green', () => {
+        if (phase !== 0) return;
+        phase = 1; clearUI();
+        proj.x = 150; proj.y = GROUND - 10; proj.vx = 210; proj.vy = -230; proj.live = true;
+        beep(420, 0.12, 'square', 0.1);
+      });
+      const p = el('div', 'panel'); p.style.bottom = '6%'; p.style.top = 'auto';
+      p.appendChild(b); ui.appendChild(p);
+    },
+    update(dt) {
+      t += dt;
+      if (proj.live) {
+        proj.x += proj.vx * dt; proj.vy += 900 * dt; proj.y += proj.vy * dt;
+        if (proj.y > GROUND + 30) {
+          proj.live = false; phase = 2;
+          burst(proj.x, GROUND + 24, '#a89a86', 12);
+          beep(120, 0.2, 'square', 0.1);
+          setTimeout(() => {
+            dialogue([
+              { who: 'YOUR PARTNER', text: 'It went like four feet.', color: '#4fc98a' },
+              { who: S.name, text: 'It did not work!', color: '#4fc3f7' },
+              { who: 'YOUR PARTNER', text: 'If it works, you can do it. But you have to LEARN.', color: '#4fc98a' },
+              { who: S.name, text: '...Fine. I will go to school.', color: '#4fc3f7' }
+            ], () => {
+              drawNeighborhood(4, false, { x: 620, y: 250 });
+              drawHero(210, GROUND + 40, { face: 1 });
+              drawFriend(330, GROUND + 40, { face: -1 });
+            }, sceneSchoolIntro);
+          }, 900);
+        }
+      }
+    },
+    draw() {
+      drawNeighborhood(t, false, { x: 640, y: 120 });
+      drawHero(120, GROUND + 40, { face: 1 });
+      drawSlingshot(150, GROUND - 24, phase === 0 ? 0.35 : 0, 0.7, phase === 0);
+      if (proj.live) circle(proj.x, proj.y, 8, '#6e6357');
+      drawHUD('MAKE IT WORK');
+    }
+  });
+}
+
+/* ---------------- L2.4  school: what do you want to learn? ---------------- */
+
+function classroomBG(t, opt = {}) {
+  drawSky('#d8cfc0', '#efe7d8');
+  ctx.fillStyle = '#e7dcc8'; ctx.fillRect(0, 0, W, GROUND);
+  ctx.fillStyle = '#c9b596'; ctx.fillRect(0, GROUND - 14, W, 14);
+  drawGround('#8a6a48', '#9a7a55');
+  // board sits low enough to survive the dialogue-box lift
+  drawChalkboard(270, 296, opt.board || ['WHAT DO YOU', 'WANT TO LEARN?']);
+  // a desk
+  rr(620, GROUND - 46, 150, 12, 4, '#8a5a2b');
+  rr(636, GROUND - 34, 12, 34, 3, '#6b4522');
+  rr(742, GROUND - 34, 12, 34, 3, '#6b4522');
+  drawTeacher(690, GROUND, -1, opt);
+  drawHero(552, GROUND + 40, { face: 1 });          // you, in class
+}
+
+function sceneSchoolIntro() {
+  dialogue([
+    { who: 'NARRATOR', text: 'So you went to school.', color: '#9fe870' },
+    { who: 'THE TEACHER', text: 'Good morning! What do you want to learn about?', color: '#c46bff' }
+  ], () => classroomBG(2, { pointer: true }), sceneSchoolChoice);
+}
+
+function sceneSchoolChoice() {
+  let t = 0, said = '';
+  const WRONG = {
+    'Math': 'Math! Wonderful. ...No? You are shaking your head.',
+    'Dinosaurs': 'Dinosaurs are lovely, but they are all gone, dear.'
+  };
+
+  setScene({
+    enter() { this.ask(); },
+    ask() {
+      clearUI();
+      const p = el('div', 'panel');
+      p.style.bottom = '5%'; p.style.top = 'auto'; p.style.width = '90%';
+      p.appendChild(el('div', 'sub', said || 'What do you want to learn about?'));
+      const row = el('div');
+      row.style.cssText = 'display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:6px';
+      const self = this;
+      ['Math', 'Dinosaurs'].forEach(opt => {
+        row.appendChild(button(opt, '', () => { said = WRONG[opt]; beep(240, 0.15); self.ask(); }));
+      });
+      row.appendChild(button('ATTACKING A NASA SPACECRAFT', 'red', () => {
+        fanfare();
+        dialogue([
+          { who: S.name, text: 'Attacking a NASA spacecraft.', color: '#4fc3f7' },
+          { who: 'THE TEACHER', text: 'WHAT?', color: '#c46bff' },
+          { who: 'THE TEACHER', text: 'Hm. Okay. This is how you do it.', color: '#c46bff' },
+          { who: 'THE TEACHER', text: 'First, get ONE Y-STICK.', color: '#c46bff' },
+          { who: 'THE TEACHER', text: 'And then get a RUBBER BINDER.', color: '#c46bff' },
+          { who: 'THE TEACHER', text: 'And then get WHATEVER YOU WANT to launch at it.', color: '#c46bff' },
+          { who: 'THE TEACHER', text: 'And then it will work!', color: '#c46bff' },
+          { who: 'GO GET THEM', text: 'Collect the 3 things — in the order she said!', color: '#ffd54a' }
+        ], () => classroomBG(3, {
+          shocked: true, pointer: true,
+          board: ['1. Y-STICK', '2. RUBBER BINDER', '3. SOMETHING TO LAUNCH']
+        }), sceneGather);
+      }));
+      p.appendChild(row);
+      ui.appendChild(p);
+    },
+    update(dt) { t += dt; },
+    draw() { drawLifted(() => classroomBG(t, { pointer: true, shocked: said !== '' })); }
+  });
+}
+
+/* ---------------- L2.5  gather the three parts, in order ---------------- */
+
+const SLING_PARTS = [
+  { n: 'Y-STICK', draw: () => {
+      ctx.strokeStyle = '#8a5a2b'; ctx.lineWidth = 8; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(0, 26); ctx.lineTo(0, -4); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, -4); ctx.lineTo(-16, -28); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, -4); ctx.lineTo(16, -28); ctx.stroke();
+    } },
+  { n: 'RUBBER BINDER', draw: () => {
+      ctx.strokeStyle = '#d4634f'; ctx.lineWidth = 7;
+      ctx.beginPath(); ctx.ellipse(0, 0, 22, 14, 0.3, 0, 7); ctx.stroke();
+    } },
+  { n: 'SOMETHING TO LAUNCH', draw: () => {
+      circle(0, 2, 17, '#6e6357'); circle(-5, -4, 6, '#8a8073');
+      circle(7, 6, 4, '#585045');
+    } }
+];
+
+function sceneGather() {
+  const p = makeFighter();
+  p.x = 90;
+  let t = 0, got = 0, done = false, nag = 0;
+  const items = SLING_PARTS.map((k, i) => ({
+    kind: k, idx: i,
+    x: 260 + i * 240,
+    y: GROUND + 4,          // all on the ground: this stage is about ORDER, not jumping
+    taken: false, t: Math.random() * 5
+  }));
+
+  setScene({
+    pInvulnRef: p,
+    enter() {
+      const tip = el('div', 'toast', 'GET THEM IN ORDER!');
+      ui.appendChild(tip);
+      setTimeout(() => tip.remove(), 2400);
+    },
+    update(dt) {
+      if (done) return;
+      t += dt;
+      if (nag > 0) nag -= dt;
+      fighterPhysics(p, dt);
+      for (const it of items) {
+        it.t += dt;
+        if (it.taken) continue;
+        if (touching(it, p)) {
+          if (it.idx === got) {
+            it.taken = true; got++; S.partsFound++;
+            beep(620 + got * 130, 0.14, 'square', 0.12);
+            burst(it.x, it.y, '#ffd54a', 14);
+            floatText(it.x, it.y - 34, 'GOT THE ' + it.kind.n + '!', '#9fe870');
+          } else if (nag <= 0) {
+            nag = 1.4;
+            beep(200, 0.14, 'sawtooth', 0.1);
+            floatText(p.x, p.y - 110, 'GET THE ' + SLING_PARTS[got].n + ' FIRST!', '#ff9d5a');
+          }
+        }
+      }
+      if (got >= 3) {
+        done = true; fanfare();
+        setTimeout(sceneSlingshotIntro, 1200);
+      }
+    },
+    draw() {
+      drawSky('#5aa9f0', '#bfe4f7');
+      drawSchool(180, GROUND);
+      // playground bits
+      ctx.fillStyle = '#8a5a2b'; ctx.fillRect(618, GROUND - 118, 10, 118);
+      ctx.fillRect(742, GROUND - 118, 10, 118);
+      ctx.fillRect(614, GROUND - 122, 142, 10);
+      drawGround('#4a8a3e', '#57a049');
+      drawTrees();
+
+      for (const it of items) {
+        if (it.taken) continue;
+        const fy = it.y + Math.sin(it.t * 3) * 5;
+        ctx.save(); ctx.translate(it.x, fy);
+        ctx.globalAlpha = it.idx === got ? 0.42 : 0.16;
+        ctx.fillStyle = it.idx === got ? '#ffd54a' : '#ffffff';
+        ctx.beginPath(); ctx.arc(0, 0, 32, 0, 7); ctx.fill();
+        ctx.globalAlpha = 1;
+        it.kind.draw();
+        ctx.restore();
+        const ly = it.y < GROUND - 60 ? fy - 44 : fy + 48;
+        ctx.font = 'bold 13px Trebuchet MS'; ctx.textAlign = 'center';
+        ctx.strokeStyle = '#000'; ctx.lineWidth = 4;
+        ctx.strokeText((it.idx + 1) + '. ' + it.kind.n, it.x, ly);
+        ctx.fillStyle = it.idx === got ? '#ffe9a8' : '#b9c2d0';
+        ctx.fillText((it.idx + 1) + '. ' + it.kind.n, it.x, ly);
+        ctx.textAlign = 'left';
+      }
+      drawHero(p.x, p.y, { face: p.face, bob: p.vx !== 0 ? p.t * 12 : 0 });
+      drawHUD('PARTS: ' + got + ' / 3');
+      ctx.fillStyle = '#fff'; ctx.font = 'bold 20px Trebuchet MS'; ctx.textAlign = 'center';
+      ctx.fillText(got < 3 ? 'NEXT: ' + SLING_PARTS[got].n : 'GO GET THAT SPACECRAFT!', W / 2, 40);
+      ctx.textAlign = 'left';
+    }
+  });
+}
+
+/* ---------------- L2.6  the real slingshot — main gameplay ---------------- */
+
+function sceneSlingshotIntro() {
+  dialogue([
+    { who: S.name, text: 'Y-stick. Rubber binder. A rock. It WILL work.', color: '#4fc3f7' },
+    { who: 'HOW TO SHOOT', text: '↑ ↓ aims.  HOLD SPACE to pull back, LET GO to fire!', color: '#ffd54a' },
+    { who: 'HOW TO SHOOT', text: 'The dotted line shows where it will go. Hit it 3 times!', color: '#ffd54a' }
+  ], () => {
+    drawNeighborhood(2, false, { x: 620, y: 250 });
+    drawHero(150, GROUND + 40, { face: 1 });
+    drawSlingshot(184, GROUND - 24, 0.4, 1.0, true);
+  }, sceneSlingshot);
+}
+
+const SLING_G = 900;
+/* Tuned so about half of all sensible angle/power combos can actually reach the
+   spacecraft — at the original speed only near-max power ever got there. */
+const SLING_SPEED = pw => 340 + pw * 700;
+const SHIP_Y = 155;
+
+function sceneSlingshot() {
+  const SX = 150, SY = GROUND - 24;         // slingshot muzzle
+  let angle = 0.85, power = 0, charging = false, t = 0, done = false;
+  let shots = [], hits = 0;
+  const ship = { x: 640, y: SHIP_Y, dir: -1, hurtT: 0, hp: 3, maxHp: 3 };
+
+  window.__sling = () => ({ angle, power, shipX: ship.x, shipY: ship.y, hits });  // playtest hook
+
+  function fire() {
+    const sp = SLING_SPEED(power);
+    shots.push({ x: SX, y: SY - 18, vx: Math.cos(angle) * sp, vy: -Math.sin(angle) * sp, t: 0 });
+    S.shotsFired++;
+    beep(520, 0.12, 'square', 0.11);
+  }
+
+  setScene({
+    update(dt) {
+      if (done) return;
+      t += dt;
+
+      if (keys.ArrowUp) angle = Math.min(1.42, angle + dt * 0.9);
+      if (keys.ArrowDown) angle = Math.max(0.12, angle - dt * 0.9);
+
+      if (keys.Space) {
+        if (!charging) charging = true;
+        power = Math.min(1, power + dt * 0.85);
+      } else if (charging) {
+        charging = false; fire(); power = 0;
+      }
+
+      // ship patrols, faster as it takes damage
+      const spd = 90 + hits * 45;
+      ship.x += ship.dir * spd * dt;
+      if (ship.x < 330) ship.dir = 1;
+      if (ship.x > 800) ship.dir = -1;
+      ship.y = SHIP_Y + Math.sin(t * 1.5) * 14;
+      if (ship.hurtT > 0) ship.hurtT -= dt;
+
+      for (const s of shots) {
+        s.t += dt;
+        s.x += s.vx * dt; s.vy += SLING_G * dt; s.y += s.vy * dt;
+        if (ship.hurtT <= 0 && Math.abs(s.x - ship.x) < 78 && Math.abs(s.y - ship.y) < 42) {
+          s.t = 99; hits++; S.shipHits = hits; ship.hurtT = 0.5;
+          burst(s.x, s.y, '#ffd54a', 22, 300);
+          floatText(ship.x, ship.y - 60, 'HIT! ' + hits + '/3', '#4ede77');
+          beep(880, 0.14, 'square', 0.12); S.shake = 12;
+          if (hits >= 3) {
+            done = true; fanfare();
+            setTimeout(sceneCrash, 1100);
+          }
+        }
+        if (s.y > GROUND + 34) { burst(s.x, GROUND + 28, '#a89a86', 8, 150); s.t = 99; }
+      }
+      shots = shots.filter(s => s.t < 9 && s.x < W + 60);
+    },
+    draw() {
+      drawNeighborhood(t, false, null);
+      drawSpacecraft(ship.x, ship.y, 0.72, t, { hurtT: ship.hurtT, hp: ship.hp - hits, maxHp: ship.maxHp, face: ship.dir });
+
+      // dotted trajectory preview — this is what makes it fair for a small kid
+      const psp = SLING_SPEED(power);
+      let px = SX, py = SY - 18, pvx = Math.cos(angle) * psp, pvy = -Math.sin(angle) * psp;
+      ctx.fillStyle = 'rgba(255,255,255,.75)';
+      for (let i = 0; i < 34; i++) {
+        px += pvx * 0.045; pvy += SLING_G * 0.045; py += pvy * 0.045;
+        if (py > GROUND + 30 || px > W) break;
+        ctx.globalAlpha = 0.75 - i * 0.018;
+        ctx.beginPath(); ctx.arc(px, py, 3.2, 0, 7); ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+
+      for (const s of shots) if (s.t < 9) circle(s.x, s.y, 8, '#6e6357');
+
+      drawHero(SX - 34, GROUND + 40, { face: 1 });
+      drawSlingshot(SX, SY, power, angle, true);
+
+      // power meter
+      rr(24, GROUND + 54, 220, 22, 11, 'rgba(0,0,0,.6)');
+      rr(27, GROUND + 57, 214 * power, 16, 8, power > 0.8 ? '#ff5a4a' : '#ffd54a');
+      ctx.fillStyle = '#fff'; ctx.font = 'bold 15px Trebuchet MS';
+      ctx.fillText('POWER (hold SPACE)', 32, GROUND + 71);
+
+      drawHUD('HITS: ' + hits + ' / 3');
+      ctx.fillStyle = '#fff'; ctx.font = 'bold 17px Trebuchet MS'; ctx.textAlign = 'center';
+      ctx.fillText('↑ ↓ to aim', W / 2, 40); ctx.textAlign = 'left';
+    }
+  });
+}
+
+/* ---------------- L2.7  it crashes on your house ---------------- */
+
+function sceneCrash() {
+  let t = 0, phase = 0;
+  const ship = { x: 700, y: 130, vx: -150, vy: 40, tilt: 0 };
+
+  setScene({
+    update(dt) {
+      t += dt;
+      if (phase === 0) {
+        ship.x += ship.vx * dt;
+        ship.vy += 190 * dt; ship.y += ship.vy * dt;
+        ship.tilt += dt * 1.5;
+        S.shake = 6;
+        if (Math.random() < 0.7) burst(ship.x + 50, ship.y, '#ff8a3d', 2, 120);
+        if (ship.y >= GROUND - 110) {
+          phase = 1; S.flash = 1.6; S.shake = 42; boomSound();
+          burst(450, GROUND - 90, '#ff8a3d', 60, 460);
+          burst(450, GROUND - 60, '#8a7256', 40, 380);
+        }
+      } else if (phase === 1 && t > 3.4) {
+        phase = 2;
+        dialogue([
+          { who: 'YOUR PARTNER', text: '...You got it! You really got it!', color: '#4fc98a' },
+          { who: 'YOUR PARTNER', text: 'It landed on your house.', color: '#4fc98a' },
+          { who: S.name, text: 'That was my house.', color: '#4fc3f7' },
+          { who: S.name, text: 'I am homeless.', color: '#4fc3f7' },
+          { who: 'YOUR PARTNER', text: 'Uh oh. Your face is going red.', color: '#4fc98a' }
+        ], () => {
+          drawNeighborhood(6, true, null);
+          drawHero(180, GROUND + 40, { face: 1 });
+          drawFriend(300, GROUND + 40, { face: 1 });
+        }, sceneRageIntro);
+      }
+      if (phase === 1) S.shake = Math.max(S.shake, 12 * Math.max(0, 1 - (t - 1.4)));
+    },
+    draw() {
+      drawNeighborhood(t, phase >= 1, null);
+      if (phase === 0) {
+        drawSpacecraft(ship.x, ship.y, 0.72, t, { tilt: ship.tilt, face: -1 });
+        ctx.fillStyle = '#fff'; ctx.font = 'bold 34px Trebuchet MS'; ctx.textAlign = 'center';
+        ctx.strokeStyle = '#000'; ctx.lineWidth = 5;
+        ctx.strokeText('IT IS COMING DOWN!', W / 2, 90);
+        ctx.fillText('IT IS COMING DOWN!', W / 2, 90);
+        ctx.textAlign = 'left';
+      }
+      drawHero(180, GROUND + 40, { face: 1 });
+      drawFriend(300, GROUND + 40, { face: 1 });
+    }
+  });
+}
+
+/* ---------------- L2.8  explode in anger — survive and you win ---------------- */
+
+function sceneRageIntro() {
+  dialogue([
+    { who: S.name, text: 'My. House.', color: '#4fc3f7' },
+    { who: S.name, text: 'I am going to EXPLODE IN ANGER!!!', color: '#ff5a4a' },
+    { who: 'LAST CHALLENGE', text: 'You explode! Now survive it — dodge the falling stuff.', color: '#ffd54a' },
+    { who: 'LAST CHALLENGE', text: 'If you don\'t die... YOU WIN!', color: '#ffd54a' }
+  ], () => {
+    drawNeighborhood(7, true, null);
+    drawHero(180, GROUND + 40, { face: 1 });
+  }, sceneRage);
+}
+
+function sceneRage() {
+  const p = makeFighter();
+  p.x = W / 2;
+  const SURVIVE = 20;
+  let t = 0, left = SURVIVE, junk = [], spawnT = 0.6, done = false;
+  S.hp = S.maxHp;
+
+  setScene({
+    pInvulnRef: p,
+    update(dt) {
+      if (done) return;
+      t += dt; left -= dt;
+      S.ragePct = Math.min(100, Math.round((1 - left / SURVIVE) * 100));
+      fighterPhysics(p, dt);
+      S.shake = Math.max(S.shake, 3);
+
+      // it gets angrier as the meter fills
+      const rate = 0.62 - (1 - left / SURVIVE) * 0.3;
+      spawnT -= dt;
+      if (spawnT <= 0) {
+        spawnT = rate;
+        junk.push({
+          x: 50 + Math.random() * (W - 100), y: -40,
+          vy: 190 + Math.random() * 170, r: 15 + Math.random() * 12,
+          spin: Math.random() * 6, hot: Math.random() < 0.5, spent: false
+        });
+      }
+
+      for (const j of junk) {
+        j.y += j.vy * dt; j.spin += dt * 5;
+        if (!j.spent && Math.abs(j.x - p.x) < j.r + 20 && Math.abs(j.y - (p.y - 45)) < j.r + 44) {
+          j.spent = true; hurtPlayer(9);
+          burst(j.x, j.y, '#ff8a3d', 12);
+        }
+        if (j.y > GROUND + 34 && !j.spent) {
+          j.spent = true; burst(j.x, GROUND + 28, j.hot ? '#ff8a3d' : '#8a7256', 8, 160);
+        }
+      }
+      junk = junk.filter(j => j.y < H + 60);
+
+      if (S.hp <= 0) { done = true; setTimeout(() => gameOver(sceneRage), 400); }
+      else if (left <= 0) {
+        done = true; S.flash = 1.4; S.shake = 30; boomSound();
+        burst(p.x, p.y - 50, '#ff5a4a', 50, 460);
+        setTimeout(() => sceneWin(2), 1200);
+      }
+    },
+    draw() {
+      // sky reddens as the rage meter climbs
+      const rage = 1 - left / SURVIVE;
+      drawSky(`rgb(${40 + rage * 90},${20 + rage * 10},${50 - rage * 20})`, `rgb(${150 + rage * 90},${70 - rage * 30},${40})`);
+      drawGround('#4a3a2e', '#5a4636');
+      ctx.fillStyle = '#4a4a52'; ctx.fillRect(0, GROUND + 52, W, 40);
+      drawHouse(450, GROUND, true, t);
+
+      for (const j of junk) {
+        if (j.spent) continue;
+        ctx.save(); ctx.translate(j.x, j.y); ctx.rotate(j.spin);
+        if (j.hot) {
+          circle(0, 0, j.r, '#ff8a1f'); circle(0, 0, j.r * 0.55, '#ffe14a');
+        } else {
+          ctx.fillStyle = '#7a6650';
+          ctx.fillRect(-j.r, -j.r * 0.7, j.r * 2, j.r * 1.4);
+          ctx.fillStyle = '#5f4f3d'; ctx.fillRect(-j.r * 0.6, -j.r * 0.3, j.r * 1.2, j.r * 0.6);
+        }
+        ctx.restore();
+        if (j.hot && Math.random() < 0.3) burst(j.x, j.y, '#ff8a3d', 1, 60);
+      }
+
+      // the hero, visibly furious
+      const glow = 0.35 + Math.abs(Math.sin(t * 8)) * 0.4;
+      ctx.globalAlpha = glow * rage;
+      circle(p.x, p.y - 50, 54 + rage * 26, '#ff4d3d');
+      ctx.globalAlpha = 1;
+      drawHero(p.x, p.y, { face: p.face, hurt: p.invuln > 0, bob: t * 16 });
+      if (Math.random() < 0.35 * rage) burst(p.x + (Math.random() - 0.5) * 50, p.y - 60, '#ff8a3d', 1, 90);
+
+      drawHUD('SURVIVE: ' + Math.max(0, Math.ceil(left)) + 's');
+      // rage meter
+      const bw = 300;
+      rr(W / 2 - bw / 2, 16, bw, 24, 12, 'rgba(0,0,0,.6)');
+      rr(W / 2 - bw / 2 + 3, 19, (bw - 6) * rage, 18, 9, '#ff4d3d');
+      ctx.fillStyle = '#fff'; ctx.font = 'bold 15px Trebuchet MS'; ctx.textAlign = 'center';
+      ctx.fillText('ANGER ' + S.ragePct + '%', W / 2, 34); ctx.textAlign = 'left';
+    }
+  });
+}
+
+/* ======================================================================== */
 /*                        GAME OVER / VICTORY                                */
 /* ======================================================================== */
 
@@ -1778,22 +2609,31 @@ function gameOver(retryScene) {
   });
 }
 
-function sceneWin() {
+function sceneWin(level) {
   let t = 0;
+  const lv = level || S.level;
   setScene({
     enter() {
       const p = el('div', 'panel'); p.style.top = '7%'; p.style.width = '58%';
       p.appendChild(el('div', 'title-big', 'YOU WIN!!'));
+      const stats = lv === 2
+        ? `☄️ Beams dodged: <b>${S.beamsDodged}</b><br>` +
+          `🎒 Slingshot parts: <b>${S.partsFound} / 3</b><br>` +
+          `🎯 Hits on the spacecraft: <b>${S.shipHits} / 3</b> (in ${S.shotsFired} shots)<br>` +
+          `🏠 Your house: <b>GONE</b><br>` +
+          `😡 Anger: <b>${S.ragePct}%</b> — and you survived it!`
+        : `🐺 Animals beaten: <b>${S.kills}</b><br>` +
+          `🎒 Supplies grabbed: <b>${S.supplies}</b><br>` +
+          `💣 Bombs defused: <b>${S.bombsDefused}</b><br>` +
+          `💰 Loot: <b>ALL OF IT</b><br>` +
+          `🍄 Mario: <b>DEFEATED</b>`;
       p.appendChild(el('div', 'sub',
-        `<b style="font-size:26px;color:#ffd54a">${S.name}</b> beat the whole game!<br><br>` +
-        `🐺 Animals beaten: <b>${S.kills}</b><br>` +
-        `🎒 Supplies grabbed: <b>${S.supplies}</b><br>` +
-        `💣 Bombs defused: <b>${S.bombsDefused}</b><br>` +
-        `💰 Loot: <b>ALL OF IT</b><br>` +
-        `🍄 Mario: <b>DEFEATED</b>`
+        `<b style="font-size:26px;color:#ffd54a">${S.name}</b> beat ` +
+        `<b>LEVEL ${lv}</b>${lv === 2 ? ' — THE SPACECRAFT' : ' — THE BOMB'}!<br><br>` + stats
       ));
       p.appendChild(button('PLAY AGAIN ▶', 'big green', () => {
         S.hp = S.maxHp; S.kills = 0; S.supplies = 0; S.bombsDefused = 0; S.loot = 0;
+        S.beamsDodged = 0; S.partsFound = 0; S.shipHits = 0; S.shotsFired = 0; S.ragePct = 0;
         sceneTitle();
       }));
       ui.appendChild(p);
